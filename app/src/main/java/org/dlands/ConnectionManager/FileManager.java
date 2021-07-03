@@ -13,10 +13,11 @@ import java.io.InputStreamReader;
 
 public class FileManager extends File {
 
-    Context ct;
+    Context context;
 
     FileManager(Context context){
         super(context.getFilesDir(), "data.json");
+        this.context = context;
         if(!this.exists()){
             try {
                 writeString("{" +
@@ -42,7 +43,7 @@ public class FileManager extends File {
 
     public void writeString(String string) throws IOException {
         FileOutputStream fos = null;
-        fos = ct.openFileOutput(String.valueOf(this), Context.MODE_PRIVATE);
+        fos = context.openFileOutput(getName(), Context.MODE_PRIVATE);
         fos.write(string.getBytes());
     }
 

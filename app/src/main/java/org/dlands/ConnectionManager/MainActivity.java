@@ -6,18 +6,17 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.app.Dialog;
-import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 
 import com.taufiqurahman.ConnectionManager.R;
-
-import org.json.JSONException;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
@@ -29,10 +28,14 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
-    List<SocketInterface> server = new ArrayList<SocketInterface>();
+    ConnectionSequence connectionSequence = new ConnectionSequence();
+    Handler UIThreadHandler;
+    MainThreadLooper mainThreadLooper = new MainThreadLooper();
+    DataSetServers dataSetServers = new DataSetServers();
     JSONInterface jsonInterface;
     FileManager fileManager;
     RecyclerView recyclerView;
+    RowDataHandler rowDataHandler;
 
     Dialog dialog;
     EditText editTitle, editIP;
@@ -47,11 +50,12 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        UIThreadHandler = new Handler(getMainLooper());
+
         //JSON File Setup
         fileManager = new FileManager(this);
         if(fileManager.exists()) {
             try {
-                System.out.println("Filenya ada : " + fileManager.readFiletoString());
                 jsonInterface = new JSONInterface(fileManager.readFiletoString());
             } catch (Exception e) {
                 e.printStackTrace();
@@ -62,7 +66,7 @@ public class MainActivity extends AppCompatActivity {
 
         //RecyclerView Setup
         recyclerView = findViewById(R.id.recyclerView);
-        RowDataHandler rowDataHandler = new RowDataHandler(this, jsonInterface, fileManager);
+        rowDataHandler = new RowDataHandler(this, jsonInterface, fileManager, dataSetServers);
         recyclerView.setAdapter(rowDataHandler);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
@@ -108,6 +112,13 @@ public class MainActivity extends AppCompatActivity {
                 5,
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<Runnable>(10));
+
+        //MainThreadLooper
+        mainThreadLooper.start();
+        mainThreadLooper.waitUntilReady();
+        mainThreadLooper.handler.post(connectionSequence);
+
+        /*
 
         //Ping Update Loop
         new Thread(new Runnable() {
@@ -161,6 +172,8 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }).start();
+
+         */
     }
 
     @Override
@@ -182,6 +195,109 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    class ConnectionSequence implements Runnable {
+        boolean LoopingThread;
+        @Override
+        public void run() {
+            LoopingThread = true;
+
+            //Load Devices
+            for(int i = 0; i < jsonInterface.length(); i++){
+                try {
+                    dataSetServers.serverSocket.add(i, new SocketInterface(jsonInterface.getString(i, "ip")));
+                } catch (Exception e) {
+                    dataSetServers.serverSocket.add(i,null);
+                    e.printStackTrace();
+                }
+                dataSetServers.serverState.add(i, null);
+                dataSetServers.serverPing.add(i, null);
+            }
+
+            //Devices Data Update
+            while (LoopingThread){
+                for(int i = 0; i < jsonInterface.length(); i++) {
+                    int index = i;
+                    threadPoolExecutor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index);
+                            int ping = 0;
+                            String state = null;
+                            if(dataSetServers.serverSocket.get(index) != null){
+                                try {
+                                    long startTime;
+
+                                    startTime = System.currentTimeMillis();
+                                    if(dataSetServers.serverSocket.get(index) != null){
+                                        dataSetServers.serverSocket.get(index).send("s");
+                                        state = dataSetServers.serverSocket.get(index).read();
+                                        ping = (int) (startTime-System.currentTimeMillis());
+                                    }
+                                } catch (SocketTimeoutException e){
+                                    state = "Time Out";
+                                    e.printStackTrace();
+                                } catch (IOException e) {
+                                    state = "Failed";
+                                    e.printStackTrace();
+                                }
+                            } else {
+                                state = "Unreachable";
+                            }
+                            dataSetServers.serverPing.set(index, ping);
+                            dataSetServers.serverState.set(index, state);
+
+                        }
+                    });
+                    UIThreadHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            rowDataHandler.notifyDataSetChanged();
+                        }
+                    });
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+            //Devices Close Connection and clearing
+            for(int i = 0; i < jsonInterface.length(); i++){
+                try {
+                    dataSetServers.serverSocket.get(i).close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            dataSetServers.serverSocket.clear();
+            dataSetServers.serverState.clear();
+            dataSetServers.serverPing.clear();
+        }
+
+        void StopSequence(){
+            LoopingThread = false;
+        }
+
+    }
+
+    class MainThreadLooper extends Thread {
+        Handler handler;
+
+        @Override
+        public void run() {
+            Looper.prepare();
+            handler = new Handler(Looper.myLooper());
+            Looper.loop();
+        }
+        void waitUntilReady(){
+            while (handler == null){
+
+            }
+        }
+    }
+
+    /*
     class LayoutUpdate {
 
         TextView ping;
@@ -237,5 +353,7 @@ public class MainActivity extends AppCompatActivity {
             };
         }
     }
+
+     */
 
 }

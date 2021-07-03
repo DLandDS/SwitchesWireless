@@ -8,7 +8,8 @@ import org.json.JSONObject;
 public class JSONInterface extends JSONArray{
 
     JSONInterface(String JSONString) throws JSONException {
-        super(JSONString);
+        super(new JSONObject(JSONString).getJSONArray("devices").toString());
+        System.out.println("Data : " + this.toString());
     }
 
     public String getString(int i, String name) {

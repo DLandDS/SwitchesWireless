@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.res.Resources;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,6 +20,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.taufiqurahman.ConnectionManager.R;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHolder> {
 
@@ -26,10 +29,13 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
     JSONInterface listDevices;
     Context context;
 
-    RowDataHandler(Context ct, JSONInterface jsonInterface, FileManager file){
-        listDevices = jsonInterface;
-        fileManager = file;
-        context = ct;
+    DataSetServers dataSetServers;
+
+    RowDataHandler(Context context, JSONInterface jsonInterface, FileManager file, DataSetServers dataSetServers){
+        this.listDevices = jsonInterface;
+        this.fileManager = file;
+        this.context = context;
+        this.dataSetServers = dataSetServers;
     }
 
     @NonNull
@@ -103,6 +109,12 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             }
         });
 
+        //Ping
+        try {
+            holder.ping.setText(dataSetServers.serverPing.get(position));
+        } catch (IndexOutOfBoundsException e){
+
+        }
     }
 
     @Override
@@ -112,26 +124,28 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
 
     public class myViewHolder extends RecyclerView.ViewHolder {
 
-        //Row Global Variable
-        TextView tv_title, tv_ip;
+        //Row Variable
+        TextView tv_title, tv_ip, ping;
         ImageView img_icon;
         Dialog dialog;
         ConstraintLayout constraintLayout;
 
-        //Dialog Global Varable
+        //Dialog Varable
         EditText d_et_title, d_et_ip;
         ImageView d_img_icon;
         Button d_save, d_delete;
 
         public myViewHolder(@NonNull View itemView) {
             super(itemView);
+
             //RecyclerView Setup
             constraintLayout = itemView.findViewById(R.id.rowList);
             tv_ip = itemView.findViewById(R.id.ip);
             tv_title = itemView.findViewById(R.id.title);
             img_icon = itemView.findViewById(R.id.icon);
+            ping = itemView.findViewById(R.id.ping);
 
-            //Dialog Setup
+            //Edit Dialog Setup
             dialog = new Dialog(context);
             dialog.setContentView(R.layout.activity_edit_content);
             d_et_ip = dialog.findViewById(R.id.editIP);
