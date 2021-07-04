@@ -4,12 +4,13 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Message;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -19,31 +20,37 @@ import android.widget.EditText;
 import com.taufiqurahman.ConnectionManager.R;
 
 import java.io.IOException;
+import java.net.NoRouteToHostException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
-    ConnectionSequence connectionSequence = new ConnectionSequence();
-    Handler UIThreadHandler;
-    MainThreadLooper mainThreadLooper = new MainThreadLooper();
+    //Data Sets
+    private static final int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors()/2;
     DataSetServers dataSetServers = new DataSetServers();
     JSONInterface jsonInterface;
     FileManager fileManager;
+
+    //View Control
     RecyclerView recyclerView;
     RowDataHandler rowDataHandler;
+    SwipeRefreshLayout swipeRefreshLayout;
 
     Dialog dialog;
     EditText editTitle, editIP;
     Button saveButton, deleteButton;
 
+    //Threading
     ThreadPoolExecutor threadPoolExecutor;
-
-    private static final int NUMBER_OF_CORES = Runtime.getRuntime().availableProcessors()/2;
+    Handler UIThreadHandler;
+    ConnectionThreadLooper connectionThreadLooper = new ConnectionThreadLooper();
+    ConnectionThreadLooper requestThreadLooper = new ConnectionThreadLooper();
+    ConnectionSequence connectionSequence = new ConnectionSequence();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,11 +71,33 @@ public class MainActivity extends AppCompatActivity {
             System.out.println("Filenya tidak ada");
         }
 
+        //ThreadPoolExecutor
+        System.out.println("Number of cores : " + NUMBER_OF_CORES);
+        threadPoolExecutor = new ThreadPoolExecutor(
+                NUMBER_OF_CORES,
+                NUMBER_OF_CORES * 2,
+                5,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(2));
+
         //RecyclerView Setup
         recyclerView = findViewById(R.id.recyclerView);
-        rowDataHandler = new RowDataHandler(this, jsonInterface, fileManager, dataSetServers);
+        rowDataHandler = new RowDataHandler(
+                this,
+                jsonInterface,
+                fileManager,
+                dataSetServers
+        );
         recyclerView.setAdapter(rowDataHandler);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        swipeRefreshLayout = findViewById(R.id.swipeRefresh);
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            dataSetServers.stopThread();
+            connectionThreadLooper.handler.post(new ConnectionSequence());
+            while (dataSetServers.getThreadState()){}
+            rowDataHandler.notifyDataSetChanged();
+        });
+
 
         //Dialog New Devices Setup
         dialog = new Dialog(this);
@@ -86,94 +115,27 @@ public class MainActivity extends AppCompatActivity {
         deleteButton.setVisibility(View.INVISIBLE);
 
         saveButton = dialog.findViewById(R.id.editButton);
-        saveButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                jsonInterface.addNewObject(
-                        editTitle.getText().toString(),
-                        editIP.getText().toString(),
-                        0
-                );
-                rowDataHandler.notifyDataSetChanged();
-                dialog.dismiss();
-                try {
-                    fileManager.writeString(jsonInterface.toString());
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+        saveButton.setOnClickListener(view -> {
+            jsonInterface.addNewObject(
+                    editTitle.getText().toString(),
+                    editIP.getText().toString(),
+                    0
+            );
+            rowDataHandler.notifyDataSetChanged();
+            dialog.dismiss();
+            try {
+                fileManager.writeString(jsonInterface.toString());
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         });
 
-        //ThreadPoolExecutor
-        System.out.println("Number of cores : " + NUMBER_OF_CORES);
-        threadPoolExecutor = new ThreadPoolExecutor(
-                NUMBER_OF_CORES,
-                NUMBER_OF_CORES * 2,
-                5,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<Runnable>(10));
+        //ConnectionThreadLooper
+        connectionThreadLooper.start();
+        requestThreadLooper.start();
+        connectionThreadLooper.waitUntilReady();
+        connectionThreadLooper.handler.post(connectionSequence);
 
-        //MainThreadLooper
-        mainThreadLooper.start();
-        mainThreadLooper.waitUntilReady();
-        mainThreadLooper.handler.post(connectionSequence);
-
-        /*
-
-        //Ping Update Loop
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                System.out.println("Thread Started");
-                for(int i = 0; i < jsonInterface.length(); i++){
-                    try {
-                        server.add(i, new SocketInterface(jsonInterface.getString(i, "ip")));
-                    } catch (IOException e) {
-                        server.add(i,null);
-                        e.printStackTrace();
-                    }
-                }
-                while (true){
-                    for(int i = 0; i < jsonInterface.length(); i++) {
-                        int index = i;
-                        threadPoolExecutor.execute(new Runnable() {
-                            @Override
-                            public void run() {
-                                System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index);
-                                if(server.get(index) != null){
-                                    try {
-                                        long startTime;
-                                        String state = null;
-                                        startTime = System.currentTimeMillis();
-                                        //recyclerView.post(new LayoutUpdate(index).message(((long) System.currentTimeMillis() - startTime) + " ms"));
-                                        if(server.get(index) != null){
-                                            server.get(index).send("s");
-                                            state = server.get(index).read();
-                                            recyclerView.post(new LayoutUpdate(index).message(((long) System.currentTimeMillis() - startTime) + " ms"));
-                                            recyclerView.post(new LayoutUpdate(index).buttonStatus(state));
-                                        }
-                                        //System.out.println("State : " + state);
-                                    } catch (SocketTimeoutException e){
-                                        recyclerView.post(new LayoutUpdate(index).errorMessage("Disconnected"));
-                                    } catch (IOException e) {
-                                        e.printStackTrace();
-                                    }
-                                } else {
-                                    recyclerView.post(new LayoutUpdate(index).errorMessage("Failed"));
-                                }
-                            }
-                        });
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-        }).start();
-
-         */
     }
 
     @Override
@@ -182,6 +144,7 @@ public class MainActivity extends AppCompatActivity {
         return super.onCreateOptionsMenu(menu);
     }
 
+    @SuppressLint("NonConstantResourceId")
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
@@ -196,66 +159,77 @@ public class MainActivity extends AppCompatActivity {
     }
 
     class ConnectionSequence implements Runnable {
-        boolean LoopingThread;
         @Override
         public void run() {
-            LoopingThread = true;
-
+            dataSetServers.setThreadStarted();
+            swipeRefreshLayout.setRefreshing(true);
             //Load Devices
             for(int i = 0; i < jsonInterface.length(); i++){
                 try {
-                    dataSetServers.serverSocket.add(i, new SocketInterface(jsonInterface.getString(i, "ip")));
+                    dataSetServers.getSocket().add(new SocketInterface(jsonInterface.getString(i, "ip")));
+                    dataSetServers.getState().add(DataSetServers.ESTABLISHED);
+                } catch (NoRouteToHostException e){
+                    dataSetServers.getSocket().add(null);
+                    dataSetServers.getState().add(DataSetServers.UNREACHABLE);
                 } catch (Exception e) {
-                    dataSetServers.serverSocket.add(i,null);
+                    dataSetServers.getSocket().add(null);
+                    dataSetServers.getState().add(DataSetServers.FAILED);
                     e.printStackTrace();
                 }
-                dataSetServers.serverState.add(i, null);
-                dataSetServers.serverPing.add(i, null);
+                dataSetServers.getPing().add(0);
+                dataSetServers.getIsFree().add(true);
+                recyclerView.post(new InitialObject(i));
+                UIThreadHandler.post(() -> rowDataHandler.notifyDataSetChanged());
             }
+            swipeRefreshLayout.setRefreshing(false);
+            //System.out.println(dataSetServers.getThreadState()+"");
 
             //Devices Data Update
-            while (LoopingThread){
+            while (dataSetServers.getThreadState()){
+                //System.out.println("Data Update Started");
                 for(int i = 0; i < jsonInterface.length(); i++) {
                     int index = i;
-                    threadPoolExecutor.execute(new Runnable() {
-                        @Override
-                        public void run() {
-                            System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index);
+                    if(dataSetServers.getIsFree().get(index)){
+                        dataSetServers.getIsFree().set(index, false);
+                        threadPoolExecutor.execute(() -> {
+                            //System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index + " Started");
                             int ping = 0;
-                            String state = null;
-                            if(dataSetServers.serverSocket.get(index) != null){
+                            int state = dataSetServers.getState().get(index);
+                            if(dataSetServers.getSocket().get(index) != null){
+                                dataSetServers.getIsFree().set(index, false);
                                 try {
                                     long startTime;
-
                                     startTime = System.currentTimeMillis();
-                                    if(dataSetServers.serverSocket.get(index) != null){
-                                        dataSetServers.serverSocket.get(index).send("s");
-                                        state = dataSetServers.serverSocket.get(index).read();
-                                        ping = (int) (startTime-System.currentTimeMillis());
+                                    if(dataSetServers.getSocket().get(index) != null){
+                                        dataSetServers.getSocket().get(index).send("s");
+                                        state = "0".equalsIgnoreCase(dataSetServers.getSocket().get(index).read())?DataSetServers.LOW:DataSetServers.HIGH;
+                                        ping = (int) (System.currentTimeMillis()-startTime);
                                     }
                                 } catch (SocketTimeoutException e){
-                                    state = "Time Out";
+                                    state = DataSetServers.TIME_OUT;
+                                    e.printStackTrace();
+                                } catch (SocketException e){
+                                    state = DataSetServers.ERROR;
                                     e.printStackTrace();
                                 } catch (IOException e) {
-                                    state = "Failed";
+                                    state = DataSetServers.FAILED;
                                     e.printStackTrace();
                                 }
-                            } else {
-                                state = "Unreachable";
                             }
-                            dataSetServers.serverPing.set(index, ping);
-                            dataSetServers.serverState.set(index, state);
-
-                        }
-                    });
-                    UIThreadHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            rowDataHandler.notifyDataSetChanged();
-                        }
-                    });
+                            try {
+                                dataSetServers.getPing().set(index, ping);
+                                dataSetServers.getState().set(index, state);
+                                dataSetServers.getIsFree().set(index, true);
+                            } catch (IndexOutOfBoundsException e){
+                                e.printStackTrace();
+                            }
+                            //System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index + " Ended");
+                        });
+                    }
+                    UIThreadHandler.post(() -> rowDataHandler.notifyDataSetChanged());
+                    //System.out.println("Data Update Ended");
                     try {
-                        Thread.sleep(500);
+                        Thread.sleep(100);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -265,23 +239,18 @@ public class MainActivity extends AppCompatActivity {
             //Devices Close Connection and clearing
             for(int i = 0; i < jsonInterface.length(); i++){
                 try {
-                    dataSetServers.serverSocket.get(i).close();
+                    if (dataSetServers.getSocket().get(i) != null) {
+                        dataSetServers.getSocket().get(i).close();
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
-            dataSetServers.serverSocket.clear();
-            dataSetServers.serverState.clear();
-            dataSetServers.serverPing.clear();
+            dataSetServers.clear();
         }
-
-        void StopSequence(){
-            LoopingThread = false;
-        }
-
     }
 
-    class MainThreadLooper extends Thread {
+    static class ConnectionThreadLooper extends Thread {
         Handler handler;
 
         @Override
@@ -297,63 +266,46 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /*
-    class LayoutUpdate {
 
-        TextView ping;
+    class InitialObject implements Runnable {
+
+        int position;
         Button button;
 
-        LayoutUpdate(int position){
-            recyclerView.post(new Runnable() {
-                @Override
-                public void run() {
-                    ping = recyclerView.getLayoutManager().findViewByPosition(position).findViewById(R.id.ping);
-                    button = recyclerView.getLayoutManager().findViewByPosition(position).findViewById(R.id.ToggleSwitch);
-                }
+        InitialObject(int position) {
+            this.position = position;
+            recyclerView.post(()->{
+                button = Objects.requireNonNull(
+                        Objects.requireNonNull(recyclerView.getLayoutManager()).findViewByPosition(position)
+                ).findViewById(R.id.ToggleSwitch);
             });
         }
 
-
-
-        Runnable errorMessage(String message){
-            return new Runnable() {
-                @Override
-                public void run() {
-                    ping.setText(message);
-                    ping.setTextColor(Color.parseColor("#ff0000"));
-                    button.setVisibility(View.GONE);
+        @Override
+        public void run() {
+            button.setOnClickListener(v -> {
+                String messageSocket = null;
+                System.out.println("Button Pressed");
+                switch (dataSetServers.getState().get(position)) {
+                    case DataSetServers.LOW:
+                        messageSocket = SocketInterface.HIGH;
+                        break;
+                    case DataSetServers.HIGH:
+                        messageSocket = SocketInterface.LOW;
+                        break;
                 }
-            };
-        }
-
-        Runnable message(String message){
-            return new Runnable() {
-                @Override
-                public void run() {
-                    ping.setText(message);
+                if (messageSocket != null) {
+                    String finalMessageSocket = messageSocket;
+                    requestThreadLooper.handler.post(() -> {
+                        try {
+                            dataSetServers.getSocket().get(position).send(finalMessageSocket);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    });
                 }
-            };
-        }
-
-        Runnable buttonStatus(String State) {
-            return new Runnable() {
-                @Override
-                public void run() {
-                    button.setVisibility(View.VISIBLE);
-                    if (State.equalsIgnoreCase("0")){
-                        button.setBackgroundColor(Color.parseColor("#ffff4444"));
-                        button.setText("OFF");
-                    } else if (State.equalsIgnoreCase("1")){
-                        button.setBackgroundColor(Color.parseColor("#ff0099cc"));
-                        button.setText("ON");
-                    } else {
-                        button.setVisibility(View.GONE);
-                    }
-                }
-            };
+            });
         }
     }
-
-     */
 
 }

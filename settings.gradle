@@ -1,2 +1,2 @@
 include ':app'
-rootProject.name = "ListViewTest"
+rootProject.name = "Wireless Switches"

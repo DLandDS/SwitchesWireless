@@ -4,10 +4,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
-import java.net.SocketException;
-import java.net.SocketTimeoutException;
 
 public class SocketInterface extends Socket {
+
+    public static final String LOW = "0";
+    public static final String HIGH = "1";
 
     public SocketInterface(String ip) throws IOException {
         super(ip, 8888);

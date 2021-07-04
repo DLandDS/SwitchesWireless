@@ -4,7 +4,6 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.res.Resources;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,16 +19,15 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.taufiqurahman.ConnectionManager.R;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHolder> {
 
     FileManager fileManager;
     JSONInterface listDevices;
     Context context;
-
     DataSetServers dataSetServers;
+
 
     RowDataHandler(Context context, JSONInterface jsonInterface, FileManager file, DataSetServers dataSetServers){
         this.listDevices = jsonInterface;
@@ -53,69 +51,102 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         holder.tv_ip.setText(listDevices.getString(position, "ip"));
 
         //Tap to Row
-        holder.constraintLayout.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                holder.dialog.show();
-                //holder.d_img_icon.setImageResource(image[position]);
-                holder.d_et_title.setText(listDevices.getString(position, "title"));
-                holder.d_et_ip.setText(listDevices.getString(position, "ip"));
-            }
+        holder.constraintLayout.setOnClickListener(view -> {
+            holder.dialog.show();
+            //holder.d_img_icon.setImageResource(image[position]);
+            holder.d_et_title.setText(listDevices.getString(position, "title"));
+            holder.d_et_ip.setText(listDevices.getString(position, "ip"));
         });
 
         //Delete Button on Dialog
-        holder.d_delete.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                AlertDialog.Builder deleteConfirm = new AlertDialog.Builder(context);
-                deleteConfirm.setMessage("Hapus devices ini?").setCancelable(false).setPositiveButton("Ya", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        listDevices.deleteObject(position);
-                        notifyDataSetChanged();
-                        dialogInterface.dismiss();
-                        holder.dialog.dismiss();
-                        try {
-                            fileManager.writeString(listDevices.toString());
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                })
-                .setNegativeButton("Tidak", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        dialogInterface.cancel();
-                    }
-                });
-                deleteConfirm.setTitle("Hapus");
-                deleteConfirm.show();
-            }
-        });
-
-        //Save Button on Dialog
-        holder.d_save.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                listDevices.setString(position,"title", holder.d_et_title.getText().toString());
-                listDevices.setString(position,"ip", holder.d_et_ip.getText().toString());
+        holder.d_delete.setOnClickListener(view -> {
+            AlertDialog.Builder deleteConfirm = new AlertDialog.Builder(context);
+            deleteConfirm.setMessage("Hapus devices ini?").setCancelable(false).setPositiveButton("Ya", (dialogInterface, i) -> {
+                listDevices.deleteObject(position);
                 notifyDataSetChanged();
+                dialogInterface.dismiss();
+                holder.dialog.dismiss();
                 try {
                     fileManager.writeString(listDevices.toString());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                holder.dialog.dismiss();
+            })
+            .setNegativeButton("Tidak", (dialogInterface, i) -> dialogInterface.cancel());
+            deleteConfirm.setTitle("Hapus");
+            deleteConfirm.show();
+        });
+
+        //Save Button on Dialog
+        holder.d_save.setOnClickListener(view -> {
+            listDevices.setString(position,"title", holder.d_et_title.getText().toString());
+            listDevices.setString(position,"ip", holder.d_et_ip.getText().toString());
+            notifyDataSetChanged();
+            try {
+                fileManager.writeString(listDevices.toString());
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+            holder.dialog.dismiss();
         });
 
         //Ping
+
         try {
-            holder.ping.setText(dataSetServers.serverPing.get(position));
+            //System.out.println("Devices " + position + " : " + dataSetServers.getState().get(position) + " " + dataSetServers.getPing().get(position) + " ms ");
+            switch (dataSetServers.getState().get(position)){
+                case DataSetServers.NOTREADY:
+                    holder.ping.setText("Loading...");
+                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+                case DataSetServers.LOW:
+                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
+                    holder.ping.setText(dataSetServers.getPing().get(position) + " ms");
+                    holder.toggle.setText("OFF");
+                    holder.toggle.setBackgroundColor(DataSetServers.Color.LOW);
+                    holder.toggle.setVisibility(View.VISIBLE);
+                    break;
+                case DataSetServers.HIGH:
+                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
+                    holder.ping.setText(dataSetServers.getPing().get(position) + " ms");
+                    holder.toggle.setText("ON");
+                    holder.toggle.setBackgroundColor(DataSetServers.Color.HIGH);
+                    holder.toggle.setVisibility(View.VISIBLE);
+                    break;
+                case DataSetServers.TIME_OUT:
+                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
+                    holder.ping.setText("Time Out");
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+                case DataSetServers.UNREACHABLE:
+                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
+                    holder.ping.setText("Unreachable");
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+                case DataSetServers.ERROR:
+                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
+                    holder.ping.setText("Error");
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+                case DataSetServers.ESTABLISHED:
+                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
+                    holder.ping.setText("Connected");
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+                case DataSetServers.FAILED:
+                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
+                    holder.ping.setText("Failed");
+                    holder.toggle.setVisibility(View.GONE);
+                    break;
+            }
         } catch (IndexOutOfBoundsException e){
 
+        } catch (NullPointerException e){
+
         }
-    }
+
+}
 
     @Override
     public int getItemCount() {
@@ -133,7 +164,7 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         //Dialog Varable
         EditText d_et_title, d_et_ip;
         ImageView d_img_icon;
-        Button d_save, d_delete;
+        Button d_save, d_delete, toggle;
 
         public myViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -144,6 +175,7 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             tv_title = itemView.findViewById(R.id.title);
             img_icon = itemView.findViewById(R.id.icon);
             ping = itemView.findViewById(R.id.ping);
+            toggle = itemView.findViewById(R.id.ToggleSwitch);
 
             //Edit Dialog Setup
             dialog = new Dialog(context);
@@ -155,5 +187,4 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             d_delete = dialog.findViewById(R.id.deleteButton);
         }
     }
-
 }
