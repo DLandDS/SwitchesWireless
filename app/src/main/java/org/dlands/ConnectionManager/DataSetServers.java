@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DataSetServers {
-
     public final static int NOTREADY = -1;
     public final static int LOW = 0;
     public final static int HIGH = 1;
@@ -20,6 +19,7 @@ public class DataSetServers {
     private List<Boolean> isFree;
 
     private boolean threadState;
+    private boolean isAlive;
 
     DataSetServers(){
         serverSocket = new ArrayList<>();
@@ -35,8 +35,21 @@ public class DataSetServers {
 
     //Thread Controller
     public boolean getThreadState(){return threadState;}
-    public void setThreadStarted(){threadState = true;}
+    public void startThread(){threadState = true;}
     public void stopThread(){threadState = false;}
+    public void setAlive(boolean state){isAlive = state;}
+    public void waitUntilAlive(){
+        while (!isAlive){System.out.println("WAIT!!");}
+    }
+    public void waitUntilDead(){
+        while (isAlive){System.out.println("WAIT!!");}
+    }
+    public void threadRestartSequence(){
+        stopThread();
+        waitUntilDead();
+        startThread();
+    }
+
     public void clear(){
         serverSocket.clear();
         serverPing.clear();
