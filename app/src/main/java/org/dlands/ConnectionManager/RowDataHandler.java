@@ -4,6 +4,8 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,9 +29,12 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
     JSONInterface listDevices;
     Context context;
     DataSetServers dataSetServers;
+    ConnectionThreadLooper requestThreadLooper;
 
-
-    RowDataHandler(Context context, JSONInterface jsonInterface, FileManager file, DataSetServers dataSetServers){
+    RowDataHandler(Context context,
+                   JSONInterface jsonInterface,
+                   FileManager file,
+                   DataSetServers dataSetServers){
         this.listDevices = jsonInterface;
         this.fileManager = file;
         this.context = context;
@@ -39,6 +44,8 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
     @NonNull
     @Override
     public myViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        requestThreadLooper = new ConnectionThreadLooper();
+        requestThreadLooper.start();
         LayoutInflater layoutInflater = LayoutInflater.from(context);
         View veiw = layoutInflater.inflate(R.layout.row_list, parent, false);
         return new myViewHolder(veiw);
@@ -62,8 +69,10 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         holder.d_delete.setOnClickListener(view -> {
             AlertDialog.Builder deleteConfirm = new AlertDialog.Builder(context);
             deleteConfirm.setMessage("Hapus devices ini?").setCancelable(false).setPositiveButton("Ya", (dialogInterface, i) -> {
+                dataSetServers.stopThread();
+                dataSetServers.waitUntilDead();
                 listDevices.deleteObject(position);
-                notifyDataSetChanged();
+                dataSetServers.startThread();
                 dialogInterface.dismiss();
                 holder.dialog.dismiss();
                 try {
@@ -79,9 +88,11 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
 
         //Save Button on Dialog
         holder.d_save.setOnClickListener(view -> {
+            dataSetServers.stopThread();
             listDevices.setString(position,"title", holder.d_et_title.getText().toString());
             listDevices.setString(position,"ip", holder.d_et_ip.getText().toString());
-            notifyDataSetChanged();
+            dataSetServers.waitUntilDead();
+            dataSetServers.startThread();
             try {
                 fileManager.writeString(listDevices.toString());
             } catch (IOException e) {
@@ -90,8 +101,31 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             holder.dialog.dismiss();
         });
 
-        //Ping
+        holder.toggle.setOnClickListener(v -> {
+            String messageSocket = null;
+            System.out.println("Button Pressed");
+            switch (dataSetServers.getState().get(position)) {
+                case DataSetServers.LOW:
+                    messageSocket = SocketInterface.HIGH;
+                    break;
+                case DataSetServers.HIGH:
+                    messageSocket = SocketInterface.LOW;
+                    break;
+            }
+            if (messageSocket != null) {
+                String finalMessageSocket = messageSocket;
+                requestThreadLooper.handler.post(() -> {
+                    try {
+                        dataSetServers.getSocket().get(position).send(finalMessageSocket);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+        });
 
+        //Ping
+        /*
         try {
             //System.out.println("Devices " + position + " : " + dataSetServers.getState().get(position) + " " + dataSetServers.getPing().get(position) + " ms ");
             switch (dataSetServers.getState().get(position)){
@@ -145,6 +179,7 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         } catch (NullPointerException e){
 
         }
+         */
 
 }
 
@@ -174,7 +209,6 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             tv_ip = itemView.findViewById(R.id.ip);
             tv_title = itemView.findViewById(R.id.title);
             img_icon = itemView.findViewById(R.id.icon);
-            ping = itemView.findViewById(R.id.ping);
             toggle = itemView.findViewById(R.id.ToggleSwitch);
 
             //Edit Dialog Setup

@@ -10,12 +10,12 @@ import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.Looper;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 
 import com.taufiqurahman.ConnectionManager.R;
 
@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.net.NoRouteToHostException;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -48,8 +47,6 @@ public class MainActivity extends AppCompatActivity {
     //Threading
     ThreadPoolExecutor threadPoolExecutor;
     Handler UIThreadHandler;
-    ConnectionThreadLooper connectionThreadLooper = new ConnectionThreadLooper();
-    ConnectionThreadLooper requestThreadLooper = new ConnectionThreadLooper();
     ConnectionSequence connectionSequence = new ConnectionSequence();
 
     @Override
@@ -92,10 +89,7 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         swipeRefreshLayout = findViewById(R.id.swipeRefresh);
         swipeRefreshLayout.setOnRefreshListener(() -> {
-            dataSetServers.stopThread();
-            connectionThreadLooper.handler.post(new ConnectionSequence());
-            while (dataSetServers.getThreadState()){}
-            rowDataHandler.notifyDataSetChanged();
+            dataSetServers.threadRestartSequence();
         });
 
 
@@ -116,25 +110,33 @@ public class MainActivity extends AppCompatActivity {
 
         saveButton = dialog.findViewById(R.id.editButton);
         saveButton.setOnClickListener(view -> {
+            dataSetServers.stopThread();
+            dataSetServers.waitUntilDead();
             jsonInterface.addNewObject(
                     editTitle.getText().toString(),
                     editIP.getText().toString(),
                     0
             );
-            rowDataHandler.notifyDataSetChanged();
             dialog.dismiss();
             try {
                 fileManager.writeString(jsonInterface.toString());
             } catch (IOException e) {
                 e.printStackTrace();
             }
+            dataSetServers.startThread();
         });
-
         //ConnectionThreadLooper
-        connectionThreadLooper.start();
-        requestThreadLooper.start();
-        connectionThreadLooper.waitUntilReady();
-        connectionThreadLooper.handler.post(connectionSequence);
+        dataSetServers.startThread();
+        new Thread(()->{
+            while (true){
+                if(!dataSetServers.getThreadState()){
+                    continue;
+                }
+                dataSetServers.setAlive(true);
+                connectionSequence.run();
+                dataSetServers.setAlive(false);
+            }
+        }).start();
 
     }
 
@@ -159,12 +161,23 @@ public class MainActivity extends AppCompatActivity {
     }
 
     class ConnectionSequence implements Runnable {
+        TextView ping[];
+        Button button[];
+
         @Override
         public void run() {
-            dataSetServers.setThreadStarted();
-            swipeRefreshLayout.setRefreshing(true);
+            UIThreadHandler.post(()->{
+                rowDataHandler.notifyDataSetChanged();
+                swipeRefreshLayout.setRefreshing(true);
+            });
+
+
+            ping = new TextView[jsonInterface.length()];
+            button = new Button[jsonInterface.length()];
             //Load Devices
+
             for(int i = 0; i < jsonInterface.length(); i++){
+            
                 try {
                     dataSetServers.getSocket().add(new SocketInterface(jsonInterface.getString(i, "ip")));
                     dataSetServers.getState().add(DataSetServers.ESTABLISHED);
@@ -178,19 +191,26 @@ public class MainActivity extends AppCompatActivity {
                 }
                 dataSetServers.getPing().add(0);
                 dataSetServers.getIsFree().add(true);
-                recyclerView.post(new InitialObject(i));
-                UIThreadHandler.post(() -> rowDataHandler.notifyDataSetChanged());
-            }
-            swipeRefreshLayout.setRefreshing(false);
-            //System.out.println(dataSetServers.getThreadState()+"");
 
+                //Get Address Element
+                int finalI = i;
+                recyclerView.post(()->{
+                    ping[finalI] = recyclerView.getLayoutManager().findViewByPosition(finalI).findViewById(R.id.ping);
+                    button[finalI] = recyclerView.getLayoutManager().findViewByPosition(finalI).findViewById(R.id.ToggleSwitch);
+                });
+            }
+            UIThreadHandler.post(()->{swipeRefreshLayout.setRefreshing(false);});
+
+            
             //Devices Data Update
             while (dataSetServers.getThreadState()){
                 //System.out.println("Data Update Started");
+                //System.out.println("Thread state : " + dataSetServers.getThreadState());
                 for(int i = 0; i < jsonInterface.length(); i++) {
                     int index = i;
                     if(dataSetServers.getIsFree().get(index)){
                         dataSetServers.getIsFree().set(index, false);
+                        int finalI = i;
                         threadPoolExecutor.execute(() -> {
                             //System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index + " Started");
                             int ping = 0;
@@ -207,13 +227,13 @@ public class MainActivity extends AppCompatActivity {
                                     }
                                 } catch (SocketTimeoutException e){
                                     state = DataSetServers.TIME_OUT;
-                                    e.printStackTrace();
+                                    //e.printStackTrace();
                                 } catch (SocketException e){
                                     state = DataSetServers.ERROR;
-                                    e.printStackTrace();
+                                    //e.printStackTrace();
                                 } catch (IOException e) {
                                     state = DataSetServers.FAILED;
-                                    e.printStackTrace();
+                                    //e.printStackTrace();
                                 }
                             }
                             try {
@@ -223,10 +243,18 @@ public class MainActivity extends AppCompatActivity {
                             } catch (IndexOutOfBoundsException e){
                                 e.printStackTrace();
                             }
+                            recyclerView.post(()->{
+                                try {
+                                    setState(finalI);
+                                } catch (IndexOutOfBoundsException e){
+
+                                } catch (NullPointerException e){
+
+                                }
+                            });
                             //System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index + " Ended");
                         });
                     }
-                    UIThreadHandler.post(() -> rowDataHandler.notifyDataSetChanged());
                     //System.out.println("Data Update Ended");
                     try {
                         Thread.sleep(100);
@@ -248,64 +276,57 @@ public class MainActivity extends AppCompatActivity {
             }
             dataSetServers.clear();
         }
-    }
-
-    static class ConnectionThreadLooper extends Thread {
-        Handler handler;
-
-        @Override
-        public void run() {
-            Looper.prepare();
-            handler = new Handler(Looper.myLooper());
-            Looper.loop();
-        }
-        void waitUntilReady(){
-            while (handler == null){
-
+        
+        private void setState(int position) throws IndexOutOfBoundsException{
+            switch (dataSetServers.getState().get(position)){
+                case DataSetServers.NOTREADY:
+                    ping[position].setText("Loading...");
+                    ping[position].setTextColor(DataSetServers.Color.DEFAULT);
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.LOW:
+                    ping[position].setTextColor(DataSetServers.Color.DEFAULT);
+                    ping[position].setText(dataSetServers.getPing().get(position) + " ms");
+                    button[position].setText("OFF");
+                    button[position].setBackgroundColor(DataSetServers.Color.LOW);
+                    button[position].setVisibility(View.VISIBLE);
+                    break;
+                case DataSetServers.HIGH:
+                    ping[position].setTextColor(DataSetServers.Color.DEFAULT);
+                    ping[position].setText(dataSetServers.getPing().get(position) + " ms");
+                    button[position].setText("ON");
+                    button[position].setBackgroundColor(DataSetServers.Color.HIGH);
+                    button[position].setVisibility(View.VISIBLE);
+                    break;
+                case DataSetServers.TIME_OUT:
+                    ping[position].setTextColor(DataSetServers.Color.DANGER);
+                    ping[position].setText("Time Out");
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.UNREACHABLE:
+                    ping[position].setTextColor(DataSetServers.Color.DANGER);
+                    ping[position].setText("Unreachable");
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.ERROR:
+                    ping[position].setTextColor(DataSetServers.Color.DANGER);
+                    ping[position].setText("Error");
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.ESTABLISHED:
+                    ping[position].setTextColor(DataSetServers.Color.DEFAULT);
+                    ping[position].setText("Connected");
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.FAILED:
+                    ping[position].setTextColor(DataSetServers.Color.DANGER);
+                    ping[position].setText("Failed");
+                    button[position].setVisibility(View.GONE);
+                    break;
             }
-        }
+        } 
+
     }
 
-
-    class InitialObject implements Runnable {
-
-        int position;
-        Button button;
-
-        InitialObject(int position) {
-            this.position = position;
-            recyclerView.post(()->{
-                button = Objects.requireNonNull(
-                        Objects.requireNonNull(recyclerView.getLayoutManager()).findViewByPosition(position)
-                ).findViewById(R.id.ToggleSwitch);
-            });
-        }
-
-        @Override
-        public void run() {
-            button.setOnClickListener(v -> {
-                String messageSocket = null;
-                System.out.println("Button Pressed");
-                switch (dataSetServers.getState().get(position)) {
-                    case DataSetServers.LOW:
-                        messageSocket = SocketInterface.HIGH;
-                        break;
-                    case DataSetServers.HIGH:
-                        messageSocket = SocketInterface.LOW;
-                        break;
-                }
-                if (messageSocket != null) {
-                    String finalMessageSocket = messageSocket;
-                    requestThreadLooper.handler.post(() -> {
-                        try {
-                            dataSetServers.getSocket().get(position).send(finalMessageSocket);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    });
-                }
-            });
-        }
-    }
 
 }
