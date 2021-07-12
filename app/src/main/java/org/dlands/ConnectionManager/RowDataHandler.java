@@ -3,16 +3,15 @@ package org.dlands.ConnectionManager;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.DialogInterface;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -20,8 +19,9 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.taufiqurahman.ConnectionManager.R;
 
+import org.json.JSONException;
+
 import java.io.IOException;
-import java.util.concurrent.ThreadPoolExecutor;
 
 public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHolder> {
 
@@ -53,16 +53,41 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
 
     @Override
     public void onBindViewHolder(@NonNull myViewHolder holder, int position) {
-        //holder.img_icon.setImageResource(image[position]);
-        holder.tv_title.setText(listDevices.getString(position, "title"));
-        holder.tv_ip.setText(listDevices.getString(position, "ip"));
+        try {
+            holder.tv_title.setText(listDevices.index(position).getString("title"));
+            holder.tv_ip.setText(
+                    listDevices.index(position).getInt("port")==8888?
+                            listDevices.index(position).getString("ip")
+                            :listDevices.index(position).getString("ip") + ":"
+                                + listDevices.index(position).getString("port"));
+        } catch (JSONException e) {
+            holder.tv_title.setText("Title not Found");
+            holder.tv_ip.setText("IP not found");
+            holder.tv_title.setTextColor(DataSetServers.ERROR);
+            holder.tv_ip.setTextColor(DataSetServers.ERROR);
+            e.printStackTrace();
+        }
+
 
         //Tap to Row
         holder.constraintLayout.setOnClickListener(view -> {
             holder.dialog.show();
             //holder.d_img_icon.setImageResource(image[position]);
-            holder.d_et_title.setText(listDevices.getString(position, "title"));
-            holder.d_et_ip.setText(listDevices.getString(position, "ip"));
+            try {
+                holder.d_et_title.setText(listDevices.index(position).getString("title"));
+                holder.d_et_ip.setText(listDevices.index(position).getString("ip"));
+                holder.d_et_port.setText(listDevices.index(position).getString("port"));
+                holder.cb_customPort.setChecked(listDevices.index(position).getInt("port")!=8888);
+            } catch (JSONException e) {
+                Toast.makeText(context, "Data not found!", Toast.LENGTH_SHORT).show();
+                holder.dialog.dismiss();
+                e.printStackTrace();
+            }
+
+        });
+
+        holder.cb_customPort.setOnClickListener(v -> {
+            holder.d_et_port.setVisibility(holder.cb_customPort.isChecked()?View.VISIBLE:View.GONE);
         });
 
         //Delete Button on Dialog
@@ -71,13 +96,15 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             deleteConfirm.setMessage("Hapus devices ini?").setCancelable(false).setPositiveButton("Ya", (dialogInterface, i) -> {
                 dataSetServers.stopThread();
                 dataSetServers.waitUntilDead();
-                listDevices.deleteObject(position);
+                listDevices.remove(position);
                 dataSetServers.startThread();
                 dialogInterface.dismiss();
                 holder.dialog.dismiss();
                 try {
                     fileManager.writeString(listDevices.toString());
+                    Toast.makeText(context, "Deleting Success!", Toast.LENGTH_SHORT).show();
                 } catch (IOException e) {
+                    Toast.makeText(context, "Deleting Failed!", Toast.LENGTH_SHORT).show();
                     e.printStackTrace();
                 }
             })
@@ -89,18 +116,24 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         //Save Button on Dialog
         holder.d_save.setOnClickListener(view -> {
             dataSetServers.stopThread();
-            listDevices.setString(position,"title", holder.d_et_title.getText().toString());
-            listDevices.setString(position,"ip", holder.d_et_ip.getText().toString());
             dataSetServers.waitUntilDead();
+            listDevices.setData(position,"icon", 0);
+            listDevices.setData(position, "title", holder.d_et_title.getText().toString());
+            listDevices.setData(position,"ip", holder.d_et_ip.getText().toString());
+            listDevices.setData(position, "port", holder.cb_customPort.isChecked()?
+                    holder.d_et_port.getText().toString()
+                    :"8888");
             dataSetServers.startThread();
             try {
                 fileManager.writeString(listDevices.toString());
+                Toast.makeText(context, "Editing Success!", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
-                e.printStackTrace();
+                Toast.makeText(context, "Editing Failed!", Toast.LENGTH_SHORT).show();
             }
             holder.dialog.dismiss();
         });
 
+        //Switch Button for NodeMCU
         holder.toggle.setOnClickListener(v -> {
             String messageSocket = null;
             System.out.println("Button Pressed");
@@ -124,63 +157,6 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             }
         });
 
-        //Ping
-        /*
-        try {
-            //System.out.println("Devices " + position + " : " + dataSetServers.getState().get(position) + " " + dataSetServers.getPing().get(position) + " ms ");
-            switch (dataSetServers.getState().get(position)){
-                case DataSetServers.NOTREADY:
-                    holder.ping.setText("Loading...");
-                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-                case DataSetServers.LOW:
-                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
-                    holder.ping.setText(dataSetServers.getPing().get(position) + " ms");
-                    holder.toggle.setText("OFF");
-                    holder.toggle.setBackgroundColor(DataSetServers.Color.LOW);
-                    holder.toggle.setVisibility(View.VISIBLE);
-                    break;
-                case DataSetServers.HIGH:
-                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
-                    holder.ping.setText(dataSetServers.getPing().get(position) + " ms");
-                    holder.toggle.setText("ON");
-                    holder.toggle.setBackgroundColor(DataSetServers.Color.HIGH);
-                    holder.toggle.setVisibility(View.VISIBLE);
-                    break;
-                case DataSetServers.TIME_OUT:
-                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
-                    holder.ping.setText("Time Out");
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-                case DataSetServers.UNREACHABLE:
-                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
-                    holder.ping.setText("Unreachable");
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-                case DataSetServers.ERROR:
-                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
-                    holder.ping.setText("Error");
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-                case DataSetServers.ESTABLISHED:
-                    holder.ping.setTextColor(DataSetServers.Color.DEFAULT);
-                    holder.ping.setText("Connected");
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-                case DataSetServers.FAILED:
-                    holder.ping.setTextColor(DataSetServers.Color.DANGER);
-                    holder.ping.setText("Failed");
-                    holder.toggle.setVisibility(View.GONE);
-                    break;
-            }
-        } catch (IndexOutOfBoundsException e){
-
-        } catch (NullPointerException e){
-
-        }
-         */
-
 }
 
     @Override
@@ -197,9 +173,10 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         ConstraintLayout constraintLayout;
 
         //Dialog Varable
-        EditText d_et_title, d_et_ip;
+        EditText d_et_title, d_et_ip, d_et_port;
         ImageView d_img_icon;
         Button d_save, d_delete, toggle;
+        CheckBox cb_customPort;
 
         public myViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -214,11 +191,14 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             //Edit Dialog Setup
             dialog = new Dialog(context);
             dialog.setContentView(R.layout.activity_edit_content);
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             d_et_ip = dialog.findViewById(R.id.editIP);
-            d_et_title = dialog.findViewById(R.id.editTitlte);
+            d_et_title = dialog.findViewById(R.id.editTitle);
+            d_et_port = dialog.findViewById(R.id.editPort);
             d_img_icon = dialog.findViewById(R.id.editImage);
             d_save = dialog.findViewById(R.id.editButton);
             d_delete = dialog.findViewById(R.id.deleteButton);
+            cb_customPort = dialog.findViewById(R.id.custom_port);
         }
     }
 }

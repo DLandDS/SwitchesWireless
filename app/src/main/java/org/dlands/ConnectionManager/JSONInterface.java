@@ -12,27 +12,22 @@ public class JSONInterface extends JSONArray{
         System.out.println("Data : " + this.toString());
     }
 
-    public String getString(int i, String name) {
+    public JSONObject index(int index){
         try {
-            return this.getJSONObject(i).getString(name);
+            return this.getJSONObject(index);
         } catch (JSONException e) {
             e.printStackTrace();
         }
         return null;
     }
 
-    void setString(int i, String name, String value){
+    public <T> void setData(int i, String name, T value){
         try {
             this.getJSONObject(i).put(name,value);
         } catch (JSONException e) {
             e.printStackTrace();
         }
     }
-
-    public void deleteObject(int index){
-        this.remove(index);
-    }
-
 
     public String toString(){
         try {
@@ -43,11 +38,12 @@ public class JSONInterface extends JSONArray{
         return null;
     }
 
-    public void addNewObject(String title, String ip, int drawable){
+    public void addNewObject(String title, String ip, int port, int drawable){
         JSONObject jsonObject = new JSONObject();
         try {
             jsonObject.put("title", title);
             jsonObject.put("ip",  ip);
+            jsonObject.put("port",  port);
             jsonObject.put("icon", drawable);
             this.put(jsonObject);
         } catch (JSONException e) {

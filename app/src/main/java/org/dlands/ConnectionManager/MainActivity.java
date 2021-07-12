@@ -13,9 +13,12 @@ import android.os.Handler;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.taufiqurahman.ConnectionManager.R;
 
@@ -41,8 +44,9 @@ public class MainActivity extends AppCompatActivity {
     SwipeRefreshLayout swipeRefreshLayout;
 
     Dialog dialog;
-    EditText editTitle, editIP;
+    EditText editTitle, editIP, editPort;
     Button saveButton, deleteButton;
+    CheckBox customPort;
 
     //Threading
     ThreadPoolExecutor threadPoolExecutor;
@@ -96,17 +100,19 @@ public class MainActivity extends AppCompatActivity {
         //Dialog New Devices Setup
         dialog = new Dialog(this);
         dialog.setContentView(R.layout.activity_edit_content);
+        dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
 
-        editTitle = dialog.findViewById(R.id.editTitlte);
-        editTitle.setText(null);
-        editTitle.setHint("Device Name");
-
+        editTitle = dialog.findViewById(R.id.editTitle);
         editIP = dialog.findViewById(R.id.editIP);
-        editIP.setText(null);
-        editIP.setHint("IP");
+        editPort = dialog.findViewById(R.id.editPort);
 
         deleteButton = dialog.findViewById(R.id.deleteButton);
         deleteButton.setVisibility(View.INVISIBLE);
+
+        customPort = dialog.findViewById(R.id.custom_port);
+        customPort.setOnClickListener((view)->{
+            editPort.setVisibility(customPort.isChecked()? View.VISIBLE: View.GONE);
+        });
 
         saveButton = dialog.findViewById(R.id.editButton);
         saveButton.setOnClickListener(view -> {
@@ -115,13 +121,15 @@ public class MainActivity extends AppCompatActivity {
             jsonInterface.addNewObject(
                     editTitle.getText().toString(),
                     editIP.getText().toString(),
+                    customPort.isChecked()?Integer.parseInt(editPort.getText().toString()):8888,
                     0
             );
             dialog.dismiss();
             try {
                 fileManager.writeString(jsonInterface.toString());
+                Toast.makeText(this, "Saved!", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
-                e.printStackTrace();
+                Toast.makeText(this, "Saving device failed!", Toast.LENGTH_SHORT).show();
             }
             dataSetServers.startThread();
         });
@@ -154,6 +162,9 @@ public class MainActivity extends AppCompatActivity {
             case R.id.newDevices:
                 editIP.setText("");
                 editTitle.setText("");
+                editPort.setText("");
+                editPort.setVisibility(View.GONE);
+                customPort.setChecked(false);
                 dialog.show();
             default:
         }
@@ -179,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
             for(int i = 0; i < jsonInterface.length(); i++){
             
                 try {
-                    dataSetServers.getSocket().add(new SocketInterface(jsonInterface.getString(i, "ip")));
+                    dataSetServers.getSocket().add(new SocketInterface(jsonInterface.index(i).getString("ip"), 8888));
                     dataSetServers.getState().add(DataSetServers.ESTABLISHED);
                 } catch (NoRouteToHostException e){
                     dataSetServers.getSocket().add(null);

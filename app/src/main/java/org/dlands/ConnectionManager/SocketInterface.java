@@ -10,8 +10,8 @@ public class SocketInterface extends Socket {
     public static final String LOW = "0";
     public static final String HIGH = "1";
 
-    public SocketInterface(String ip) throws IOException {
-        super(ip, 8888);
+    public SocketInterface(String ip, int port) throws IOException {
+        super(ip, port);
     }
 
     public void send(String message) throws IOException {
