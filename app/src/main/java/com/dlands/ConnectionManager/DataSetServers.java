@@ -41,7 +41,15 @@ public class DataSetServers {
     public void setAlive(boolean state){isAlive = state;}
     public void waitUntilAlive(){ while (!isAlive){delay(100);} }
     public void waitUntilDead(){ while (isAlive) {delay(100);} }
-    public void waitUntilFree(int index){ while (!getIsFree().get(index)){delay(100);} }
+    public void waitUntilFree(int index){
+        try {
+            while (!getIsFree().get(index)){
+                delay(100);
+            }
+        } catch (IndexOutOfBoundsException e) {
+
+        }
+    }
     public void waitUntilAllFree(){
         for(int i = 0; getIsFree().size() < i; i++){
             waitUntilFree(i);
