@@ -25,7 +25,9 @@ import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -91,7 +93,11 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setAdapter(rowDataHandler);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         swipeRefreshLayout = findViewById(R.id.swipeRefresh);
-        swipeRefreshLayout.setOnRefreshListener(() -> dataSetServers.threadRestartSequence());
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            dataSetServers.threadRestartSequence();
+            rowDataHandler.notifyDataSetChanged();
+            dataSetServers.startThread();
+        });
 
 
         //Dialog New Devices Setup
@@ -126,6 +132,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (IOException e) {
                 Toast.makeText(this, "Saving device failed!", Toast.LENGTH_SHORT).show();
             }
+            rowDataHandler.notifyDataSetChanged();
             dataSetServers.startThread();
         });
         //ConnectionThreadLooper
@@ -172,10 +179,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void run() {
-            UIThreadHandler.post(()->{
-                rowDataHandler.notifyDataSetChanged();
-                swipeRefreshLayout.setRefreshing(true);
-            });
+            UIThreadHandler.post(()->rowDataHandler.notifyDataSetChanged());
 
 
             ping = new TextView[jsonInterface.length()];
@@ -187,22 +191,31 @@ public class MainActivity extends AppCompatActivity {
                 dataSetServers.getIsFree().add(false);
                 dataSetServers.getState().add(DataSetServers.NOTREADY);
                 int finalI1 = i;
+
                 threadPoolExecutor.execute(()->{
+                    UIThreadHandler.post(()->swipeRefreshLayout.setRefreshing(true));
                     try {
                         dataSetServers.getSocket().add(new SocketInterface(jsonInterface.index(finalI1).getString("ip"), 8888));
                         dataSetServers.getState().set(finalI1, DataSetServers.ESTABLISHED);
+                    } catch (UnknownHostException e){
+                        dataSetServers.getSocket().add(null);
+                        dataSetServers.getState().set(finalI1, DataSetServers.UNREACHABLE);
                     } catch (NoRouteToHostException e){
                         dataSetServers.getSocket().add(null);
                         dataSetServers.getState().set(finalI1, DataSetServers.UNREACHABLE);
                     } catch (ConnectException e){
                         dataSetServers.getSocket().add(null);
                         dataSetServers.getState().set(finalI1, DataSetServers.REFUSED);
+                    } catch (SocketTimeoutException e){
+                        dataSetServers.getSocket().add(null);
+                        dataSetServers.getState().set(finalI1, DataSetServers.TIME_OUT);
                     } catch (Exception e) {
                         dataSetServers.getSocket().add(null);
                         dataSetServers.getState().set(finalI1, DataSetServers.FAILED);
                         e.printStackTrace();
                     }
                     dataSetServers.getIsFree().set(finalI1, true);
+                    UIThreadHandler.post(()->swipeRefreshLayout.setRefreshing(false));
                 });
 
                 //Get Address Element
@@ -212,8 +225,6 @@ public class MainActivity extends AppCompatActivity {
                     button[finalI] = recyclerView.getLayoutManager().findViewByPosition(finalI).findViewById(R.id.ToggleSwitch);
                 });
             }
-            UIThreadHandler.post(()->{swipeRefreshLayout.setRefreshing(false);});
-
             
             //Devices Data Update
             while (dataSetServers.getThreadState()){
@@ -277,6 +288,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
+
+            for (Future f: threadPoolExecutor.getQueue().toArray(new Future[0]))
+            {
+                f.cancel(true); // or false
+            }
+            threadPoolExecutor.purge();
 
             //Devices Close Connection and clearing
             for(int i = 0; i < jsonInterface.length(); i++){

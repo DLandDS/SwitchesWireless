@@ -39,16 +39,18 @@ public class DataSetServers {
     public void startThread(){threadState = true;}
     public void stopThread(){threadState = false;}
     public void setAlive(boolean state){isAlive = state;}
-    public void waitUntilAlive(){
-        while (!isAlive){System.out.println("WAIT!!");}
-    }
-    public void waitUntilDead(){
-        while (isAlive){System.out.println("WAIT!!");}
+    public void waitUntilAlive(){ while (!isAlive){delay(100);} }
+    public void waitUntilDead(){ while (isAlive) {delay(100);} }
+    public void waitUntilFree(int index){ while (!getIsFree().get(index)){delay(100);} }
+    public void waitUntilAllFree(){
+        for(int i = 0; getIsFree().size() < i; i++){
+            waitUntilFree(i);
+        }
     }
     public void threadRestartSequence(){
+        waitUntilAllFree();
         stopThread();
         waitUntilDead();
-        startThread();
     }
 
     public void clear(){
@@ -56,6 +58,14 @@ public class DataSetServers {
         serverPing.clear();
         serverState.clear();
         isFree.clear();
+    }
+
+    private void delay(long milis){
+        try {
+            Thread.sleep(milis);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     static class Color {

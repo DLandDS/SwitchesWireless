@@ -95,8 +95,10 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             AlertDialog.Builder deleteConfirm = new AlertDialog.Builder(context);
             deleteConfirm.setMessage("Hapus devices ini?").setCancelable(false).setPositiveButton("Ya", (dialogInterface, i) -> {
                 dataSetServers.stopThread();
+                dataSetServers.waitUntilFree(position);
                 dataSetServers.waitUntilDead();
                 listDevices.remove(position);
+                this.notifyDataSetChanged();
                 dataSetServers.startThread();
                 dialogInterface.dismiss();
                 holder.dialog.dismiss();
@@ -116,6 +118,7 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
         //Save Button on Dialog
         holder.d_save.setOnClickListener(view -> {
             dataSetServers.stopThread();
+            dataSetServers.waitUntilFree(position);
             dataSetServers.waitUntilDead();
             listDevices.setData(position,"icon", 0);
             listDevices.setData(position, "title", holder.d_et_title.getText().toString());
@@ -123,6 +126,7 @@ public class RowDataHandler extends RecyclerView.Adapter<RowDataHandler.myViewHo
             listDevices.setData(position, "port", holder.cb_customPort.isChecked()?
                     holder.d_et_port.getText().toString()
                     :"8888");
+            this.notifyDataSetChanged();
             dataSetServers.startThread();
             try {
                 fileManager.writeString(listDevices.toString());
