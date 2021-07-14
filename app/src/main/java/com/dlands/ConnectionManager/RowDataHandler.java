@@ -1,4 +1,4 @@
-package org.dlands.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
@@ -17,7 +17,7 @@ import androidx.annotation.NonNull;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.taufiqurahman.ConnectionManager.R;
+import com.dlands.ConnectionManager.R;
 
 import org.json.JSONException;
 

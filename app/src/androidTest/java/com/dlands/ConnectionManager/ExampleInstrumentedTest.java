@@ -1,4 +1,4 @@
-package com.taufiqurahman.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import android.content.Context;
 

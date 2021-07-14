@@ -1,4 +1,4 @@
-package org.dlands.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;

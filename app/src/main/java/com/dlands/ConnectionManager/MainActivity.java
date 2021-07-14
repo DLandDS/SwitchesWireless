@@ -1,4 +1,4 @@
-package org.dlands.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -20,9 +20,8 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.taufiqurahman.ConnectionManager.R;
-
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
@@ -92,9 +91,7 @@ public class MainActivity extends AppCompatActivity {
         recyclerView.setAdapter(rowDataHandler);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         swipeRefreshLayout = findViewById(R.id.swipeRefresh);
-        swipeRefreshLayout.setOnRefreshListener(() -> {
-            dataSetServers.threadRestartSequence();
-        });
+        swipeRefreshLayout.setOnRefreshListener(() -> dataSetServers.threadRestartSequence());
 
 
         //Dialog New Devices Setup
@@ -110,9 +107,7 @@ public class MainActivity extends AppCompatActivity {
         deleteButton.setVisibility(View.INVISIBLE);
 
         customPort = dialog.findViewById(R.id.custom_port);
-        customPort.setOnClickListener((view)->{
-            editPort.setVisibility(customPort.isChecked()? View.VISIBLE: View.GONE);
-        });
+        customPort.setOnClickListener((view)-> editPort.setVisibility(customPort.isChecked()? View.VISIBLE: View.GONE));
 
         saveButton = dialog.findViewById(R.id.editButton);
         saveButton.setOnClickListener(view -> {
@@ -172,8 +167,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     class ConnectionSequence implements Runnable {
-        TextView ping[];
-        Button button[];
+        TextView[] ping;
+        Button[] button;
 
         @Override
         public void run() {
@@ -188,20 +183,27 @@ public class MainActivity extends AppCompatActivity {
             //Load Devices
 
             for(int i = 0; i < jsonInterface.length(); i++){
-            
-                try {
-                    dataSetServers.getSocket().add(new SocketInterface(jsonInterface.index(i).getString("ip"), 8888));
-                    dataSetServers.getState().add(DataSetServers.ESTABLISHED);
-                } catch (NoRouteToHostException e){
-                    dataSetServers.getSocket().add(null);
-                    dataSetServers.getState().add(DataSetServers.UNREACHABLE);
-                } catch (Exception e) {
-                    dataSetServers.getSocket().add(null);
-                    dataSetServers.getState().add(DataSetServers.FAILED);
-                    e.printStackTrace();
-                }
                 dataSetServers.getPing().add(0);
-                dataSetServers.getIsFree().add(true);
+                dataSetServers.getIsFree().add(false);
+                dataSetServers.getState().add(DataSetServers.NOTREADY);
+                int finalI1 = i;
+                threadPoolExecutor.execute(()->{
+                    try {
+                        dataSetServers.getSocket().add(new SocketInterface(jsonInterface.index(finalI1).getString("ip"), 8888));
+                        dataSetServers.getState().set(finalI1, DataSetServers.ESTABLISHED);
+                    } catch (NoRouteToHostException e){
+                        dataSetServers.getSocket().add(null);
+                        dataSetServers.getState().set(finalI1, DataSetServers.UNREACHABLE);
+                    } catch (ConnectException e){
+                        dataSetServers.getSocket().add(null);
+                        dataSetServers.getState().set(finalI1, DataSetServers.REFUSED);
+                    } catch (Exception e) {
+                        dataSetServers.getSocket().add(null);
+                        dataSetServers.getState().set(finalI1, DataSetServers.FAILED);
+                        e.printStackTrace();
+                    }
+                    dataSetServers.getIsFree().set(finalI1, true);
+                });
 
                 //Get Address Element
                 int finalI = i;
@@ -226,7 +228,8 @@ public class MainActivity extends AppCompatActivity {
                             //System.out.println("Thread " + Thread.currentThread().getId() + "  : Job " + index + " Started");
                             int ping = 0;
                             int state = dataSetServers.getState().get(index);
-                            if(dataSetServers.getSocket().get(index) != null){
+
+                            if(dataSetServers.getSocket().get(index) != null && dataSetServers.getSocket().get(index).isConnected()){
                                 dataSetServers.getIsFree().set(index, false);
                                 try {
                                     long startTime;
@@ -327,6 +330,11 @@ public class MainActivity extends AppCompatActivity {
                 case DataSetServers.ESTABLISHED:
                     ping[position].setTextColor(DataSetServers.Color.DEFAULT);
                     ping[position].setText("Connected");
+                    button[position].setVisibility(View.GONE);
+                    break;
+                case DataSetServers.REFUSED:
+                    ping[position].setTextColor(DataSetServers.Color.DANGER);
+                    ping[position].setText("Connection refused");
                     button[position].setVisibility(View.GONE);
                     break;
                 case DataSetServers.FAILED:

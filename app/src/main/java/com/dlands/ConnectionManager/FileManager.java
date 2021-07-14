@@ -1,4 +1,4 @@
-package org.dlands.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import android.content.Context;
 

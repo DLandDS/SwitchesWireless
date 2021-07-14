@@ -1,4 +1,4 @@
-package org.dlands.ConnectionManager;
+package com.dlands.ConnectionManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +12,7 @@ public class DataSetServers {
     public final static int ERROR = 4;
     public static final int ESTABLISHED = 5;
     public final static int FAILED = 9;
+    public static final int REFUSED = 6;
 
     private List<SocketInterface> serverSocket;
     private List<Integer> serverPing;
